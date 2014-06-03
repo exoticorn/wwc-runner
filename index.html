@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="http://fb.me/react-0.10.0.js"></script>
+  </head>
+  <body>
+    <script>
+      "use strict";
+      
+      function erf(x) {
+        if(x >= 0) {
+          return 1 - 1 / Math.pow(1 + 0.278393*x + 0.230389*x*x + 0.000972*x*x*x + 0.078108*x*x*x*x, 4);
+        }
+        return -erf(-x);
+      }
+      
+      function los(wins, losses) {
+        var sum = wins + losses
+        if(sum > 0) {
+          return 0.5 * (1 + erf((wins - losses) / Math.sqrt(2 * sum)));
+        }
+        return 0;
+      }
+      
+      var dirs = {
+        'up': -101,
+        'down': 101,
+        'left': -1,
+        'right': 1
+      };
+      
+      function Game(file1, file2) {
+        var self = this;
+        var field = new Uint8Array(101*102);
+        var i;
+        for(i = 0; i < 101; ++i) {
+          field[i] = 3;
+          field[i+101*100] = 3;
+          field[201+i*101] = 3;
+        }
+        var stepsLeft = 10000;
+        var workers = [new GameWorker(1, file1), new GameWorker(2, file2)];
+        
+        function endGame() {
+          if(self.onResult) {
+            self.onResult(workers[0].score, workers[1].score);
+          }
+          self.terminate();
+        }
+        
+        self.terminate = function() {
+          for(var i = 0; i < 2; ++i) {
+            if(workers[i]) {
+              workers[i].terminate();
+              workers[i] = null;
+            }
+          }
+        }
+        
+        function GameWorker(index, file) {
+          var self = this;
+          var x = Math.floor(Math.random() * 100);
+          var y = Math.floor(Math.random() * 100);
+          var pos = x + (y + 1) * 101;
+          field[pos] = index;
+          self.score = 1;
+          
+          var url = window.URL.createObjectURL(file);
+          var worker = new Worker(url);
+          window.URL.revokeObjectURL(url);
+          
+          self.terminate = function() {
+            worker.terminate();
+          };
+          
+          var id = 1;
+          
+          worker.onmessage = function(event) {
+            if(--stepsLeft < 0) {
+              endGame();
+            } else if(event.data.id === id) {
+              id = Math.random();
+              var d = dirs[event.data.direction];
+              if(d) {
+                var newPos = pos + d;
+                var f = field[newPos];
+                var done = false;
+                if(f === 0 || f === index) {
+                  if(f === 0) {
+                    self.score += 1;
+                  }
+                  pos = newPos;
+                  field[pos] = index;
+                  done = true;
+                }
+                worker.postMessage({id: id, done: done});
+              }
+            }
+          };
+          
+          worker.postMessage({id: id, done: false});
+        }
+      }
+      
+      function Match(file1, file2) {
+        var self = this;
+        var game = null;
+        var score = [0, 0];
+        
+        startNewGame();
+        
+        function startNewGame() {
+          if(game) {
+            game.terminate();
+          }
+          game = new Game(file1, file2);
+          game.onResult = function(score1, score2) {
+            if(score1 > score2) {
+              score[0]++;
+            } else {
+              score[1]++;
+            }
+            if(self.onScoreChange) {
+              self.onScoreChange(score);
+            }
+            startNewGame();
+          }
+        }
+        
+        self.stop = function() {
+          if(game) {
+            game.terminate();
+            game = null;
+          }
+        };
+        
+        self.isStopped = function() { return game === null; }
+      }
+      
+      var MatchView = React.createClass({
+        getInitialState: function() {
+          return {};
+        },
+        start: function() {
+          var match = new Match(this.props.file1, this.props.file2);
+          this.setState({match: match, score: [0, 0]});
+          match.onScoreChange = this.scoreChange;
+        },
+        stop: function() {
+          this.state.match.stop();
+          this.setState({match: null, score: this.state.score});
+        },
+        scoreChange: function(score) {
+          this.setState({score: score});
+        },
+        render: function() {
+          if(!this.props.file1 || !this.props.file2) {
+            return React.DOM.div({children: 'waiting for files'});
+          } else if(this.state.match) {
+            this.state.match.onScoreChange = this.scoreChange;
+            return React.DOM.div({children: [
+              this.state.score[0] + ' - ' + this.state.score[1] +
+                ' (LOS ' + (los(this.state.score[0], this.state.score[1]) * 100).toFixed(2) + '%)',
+              React.DOM.button({
+                type: 'button',
+                onClick: this.stop,
+                children: 'Stop'
+              })
+            ]});
+          }
+          return React.DOM.button({
+            type: 'button',
+            onClick: this.start,
+            children: 'Start'
+          });
+        }
+      });
+      
+      var FileSelector = React.createClass({
+        handleChange: function(event) {
+          if(this.props.onChange) {
+            this.props.onChange(event.target.files[0]);
+          }
+        },
+        render: function() {
+          return React.DOM.div({children: [
+            React.DOM.input({type: 'file', onChange: this.handleChange})
+          ]});
+        }
+      });
+    
+      var Runner = React.createClass({
+        getInitialState: function() {
+          return {file1: null, file2: null};
+        },
+        handleFileChange: function(key, file) {
+          var o = {};
+          o[key] = file;
+          this.setState(o);
+        },
+        render: function() {
+          return React.DOM.div({children: [
+            FileSelector({onChange: this.handleFileChange.bind(this, 'file1')}),
+            FileSelector({onChange: this.handleFileChange.bind(this, 'file2')}),
+            MatchView(this.state)
+          ]});
+        }
+      });
+      React.renderComponent(Runner({}), document.body);
+    </script>
+  </body>
+</html>
