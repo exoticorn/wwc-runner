@@ -3,17 +3,59 @@
   <head>
     <script src="http://fb.me/react-0.10.0.js"></script>
     <style>
+      .workers {
+        border: 1px solid rgba(0, 0, 0, 0.2);
+        margin: 8px;
+        padding: 4px;
+      }
+    
       .game {
-        border: 4px solid black;
+        display: inline-block;
         margin: 16px;
+        line-height: 0px;
+      }
+    
+      .game-view {
+        border: 2px solid black;
       }
       
-      .game-red {
-        border-bottom: 16px solid red;
+      .name {
+        margin: 4px;
+        font-size: 140%;
       }
       
-      .game-green {
-        border-bottom: 16px solid green;
+      .match-score {
+        margin: 4px;
+        font-size: 170%;
+      }
+      
+      .game-result {
+        position: relative;
+        border: 1px solid black;
+        border-top-style: none;
+      }
+      
+      .player1 {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        background: green;
+      }
+      
+      .player2 {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        background: red;
+      }
+      
+      .game-score {
+        margin-left: 1em;
+        position: absolute;
+        top: 50%;
+        height: 24px;
+        bottom: -12px;
+        display: inline-block;
       }
     </style>
   </head>
@@ -163,19 +205,19 @@
             for(var x = 0; x < 100; ++x) {
               switch(field[i1]) {
                 case 0:
-                  data[i2+0] = 192;
-                  data[i2+1] = 192;
-                  data[i2+2] = 192;
+                  data[i2+0] = 240;
+                  data[i2+1] = 240;
+                  data[i2+2] = 240;
                   break;
                 case 1:
-                  data[i2+0] = 255;
-                  data[i2+1] = 128;
-                  data[i2+2] = 128;
+                  data[i2+0] = 64;
+                  data[i2+1] = 192;
+                  data[i2+2] = 64;
                   break;
                 case 2:
-                  data[i2+0] = 128;
-                  data[i2+1] = 255;
-                  data[i2+2] = 128;
+                  data[i2+0] = 192;
+                  data[i2+1] = 64;
+                  data[i2+2] = 64;
                   break;
               }
               data[i2 + 3] = 255;
@@ -189,15 +231,32 @@
         componentDidMount: function() { this.draw(); },
         componentDidUpdate: function() { this.draw(); },
         render: function() {
-          return React.DOM.canvas({
-            className: this.props.score1 > this.props.score2 ? 'game game-red' : 'game game-green',
-            width: 100, height: 100, key: this.props.id, ref: 'canvas'});
+          return React.DOM.div({
+            className: 'game',
+            children: [
+              React.DOM.canvas({
+                className: 'game-view',
+                width: 100, height: 100, key: this.props.id, ref: 'canvas'}),
+              React.DOM.div({
+                className: 'game-result',
+                children: [
+                  React.DOM.div({
+                    className: this.props.score1 > this.props.score2 ? 'player1' : 'player2'
+                  }),
+                  React.DOM.div({
+                    className: 'game-score',
+                    children: (this.props.score1 - this.props.score2).toString()
+                  })
+                ]
+              })
+            ]
+          });
         }
       });
       
       var MatchView = React.createClass({
         getInitialState: function() {
-          return {gameId: 0, fields: []};
+          return {gameId: 0, score: [0, 0], fields: []};
         },
         start: function() {
           var match = new Match(this.props.file1, this.props.file2);
@@ -215,25 +274,26 @@
         },
         render: function() {
           if(!this.props.file1 || !this.props.file2) {
-            return React.DOM.div({children: 'waiting for files'});
+            return React.DOM.div({children: 'Please select two workers'});
           } else if(this.state.match) {
             this.state.match.onScoreChange = this.scoreChange;
-            return React.DOM.div({children: [
-              this.state.score[0] + ' - ' + this.state.score[1] +
-                ' (LOS ' + (los(this.state.score[0], this.state.score[1]) * 100).toFixed(2) + '%)',
-              React.DOM.button({
-                type: 'button',
-                onClick: this.stop,
-                children: 'Stop'
-              }),
-              React.DOM.div({children: this.state.fields.map(function(f) { return GameView(f); })})
-            ]});
           }
-          return React.DOM.button({
-            type: 'button',
-            onClick: this.start,
-            children: 'Start'
-          });
+          return React.DOM.div({children: [
+            React.DOM.div({children: [
+              React.DOM.span({className: 'name', children: [this.props.file1.name]}),
+              React.DOM.div({className: 'player1'}),
+              React.DOM.span({className: 'match-score', children: [this.state.score[0] + ' - ' + this.state.score[1]]}),
+              React.DOM.div({className: 'player2'}),
+              React.DOM.span({className: 'name', children: [this.props.file2.name]}),
+              ' (LOS ' + (los(this.state.score[0], this.state.score[1]) * 100).toFixed(2) + '%)'
+            ]}),
+            React.DOM.button({
+              type: 'button',
+              onClick: this.state.match ? this.stop : this.start,
+              children: this.state.match ? 'Stop' : 'Start'
+            }),
+            React.DOM.div({children: this.state.fields.map(function(f) { return GameView(f); })})
+          ]});
         }
       });
       
@@ -261,8 +321,10 @@
         },
         render: function() {
           return React.DOM.div({children: [
-            FileSelector({onChange: this.handleFileChange.bind(this, 'file1')}),
-            FileSelector({onChange: this.handleFileChange.bind(this, 'file2')}),
+            React.DOM.div({className: 'workers', children: [
+              FileSelector({onChange: this.handleFileChange.bind(this, 'file1')}),
+              FileSelector({onChange: this.handleFileChange.bind(this, 'file2')}),
+            ]}),
             MatchView(this.state),
           ]});
         }
