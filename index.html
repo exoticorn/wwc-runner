@@ -13,6 +13,7 @@
         display: inline-block;
         margin: 16px;
         line-height: 0px;
+        cursor: pointer;
       }
     
       .game-view {
@@ -62,6 +63,19 @@
         color: #bbb;
         margin-left: 3px;
       }
+      
+      .detail-graph {
+        border: 2px solid black;
+      }
+      
+      .detail-graph:focus {
+        border: 2px solid blue;
+      }
+      
+      .detail-game {
+        border: 2px solid black;
+        margin-left: 32px;
+      }
     </style>
   </head>
   <body>
@@ -82,13 +96,6 @@
         }
         return 0;
       }
-      
-      var dirs = {
-        'up': -101,
-        'down': 101,
-        'left': -1,
-        'right': 1
-      };
       
       function GameState(pos1, pos2) {
         var field = new Uint8Array(101*102);
@@ -139,11 +146,16 @@
           return 1;
         };
         
+        function posToXY(pos) {
+          return { x: pos % 101, y: Math.floor(pos / 101) - 1 };
+        }
+        
         this.snapshot = function() {
           return {
             field: field,
             moves: moves,
-            players: players
+            players: players,
+            positions: [posToXY(players[0].pos), posToXY(players[1].pos)]
           };
         };
       }
@@ -272,6 +284,7 @@
         },
         componentDidMount: function() { this.draw(); },
         componentDidUpdate: function() { this.draw(); },
+        shouldComponentUpdate: function(nextProps, nextState) { return this.props.id !== nextProps.id; },
         moveCountString: function() {
           var d = this.props.game.players[0].moves - this.props.game.players[1].moves;
           if(d > -20 && d < 20) return '=';
@@ -290,9 +303,15 @@
           if(d > -640) return '--!!';
           return '-!!!';
         },
+        onClick: function() {
+          if(this.props.onSelect) {
+            this.props.onSelect(this.props.game);
+          }
+        },
         render: function() {
           return React.DOM.div({
             className: 'game',
+            onClick: this.onClick,
             children: [
               React.DOM.canvas({
                 className: 'game-view',
@@ -317,6 +336,152 @@
         }
       });
       
+      var DetailGraph = React.createClass({
+        draw: function() {
+          var canvas = this.getDOMNode()
+          var w = canvas.width, h = canvas.height;
+          canvas.width = w;
+          var ctx = canvas.getContext('2d');
+          
+          var scores = [];
+          var moves = [];
+          var game = new GameState(this.props.game.players[0].startPos, this.props.game.players[1].startPos);
+          
+          var i;
+          for(i = 0; i < 10000; ++i) {
+            game.executeMove(this.props.game.moves[i]);
+            var s = game.snapshot();
+            scores[i] = s.players[0].score - s.players[1].score;
+            moves[i] = s.players[0].moves - s.players[1].moves;
+          }
+          
+          function graph(data, color) {
+            var i;
+            var max = 0;
+            for(i = data.length - 1; i >= 0; --i) {
+              max = Math.max(max, Math.abs(data[i]));
+            }
+            ctx.beginPath();
+            ctx.moveTo(0, h / 2);
+            for(var x = 1; x <= w; ++x) {
+              i = Math.floor(x * (data.length - 1) / w);
+              var y = (h - data[i] / max * h) / 2;
+              ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = color;
+            ctx.stroke();
+          }
+          
+          ctx.beginPath();
+          ctx.moveTo(0, h / 2);
+          ctx.lineTo(w, h / 2);
+          ctx.strokeStyle = '#ccc';
+          ctx.stroke();
+          
+          graph(moves, '#66c');
+          graph(scores, '#282');
+          
+          if(this.props.pos !== undefined) {
+            var x = w * this.props.pos / (this.props.game.moves.length - 1);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.strokeStyle = '#f88';
+            ctx.stroke();
+          }
+        },
+        onClick: function(event) {
+          var x = event.clientX - event.target.getBoundingClientRect().left;
+          var index = Math.floor(x * (this.props.game.moves.length - 1) / this.getDOMNode().width);
+          if(this.props.onUpdatePos) {
+            this.props.onUpdatePos(index);
+          }
+        },
+        onKeyDown: function(event) {
+          if(this.props.onUpdatePos) {
+            var offset = event.ctrlKey ? 100 : (event.shiftKey ? 10 : 1);
+            if(event.key === 'ArrowLeft') {
+              this.props.onUpdatePos(Math.max(0, this.props.pos - offset));
+              event.preventDefault();
+            } else if(event.key === 'ArrowRight') {
+              this.props.onUpdatePos(Math.min(10000, this.props.pos + offset));
+              event.preventDefault();
+            }
+          }
+        },
+        componentDidMount: function() { this.draw(); },
+        componentDidUpdate: function() { this.draw(); },
+        render: function() {
+          return React.DOM.canvas({
+            className: 'detail-graph',
+            onClick: this.onClick,
+            onKeyDown: this.onKeyDown,
+            tabIndex: '0',
+            width: 600,
+            height: 400,
+          });
+        }
+      });
+      
+      var DetailGame = React.createClass({
+        draw: function() {
+          var canvas = this.getDOMNode()
+          var w = canvas.width, h = canvas.height;
+          canvas.width = w;
+          var ctx = canvas.getContext('2d');
+
+          var field = this.props.game.field;
+          for(var y = 0; y < 100; ++y) {
+            for(var x = 0; x < 100; ++x) {
+              var v = field[x + (y + 1) * 101];
+              if(v !== 0) {
+                ctx.fillStyle = v === 1 ? '#4c4' : '#c44';
+                ctx.fillRect(x * 4, y * 4, 4, 4);
+              }
+            }
+          }
+          
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          this.props.game.positions.forEach(function(p) {
+            ctx.fillRect(p.x * 4, p.y * 4, 4, 4);
+          });
+        },
+        componentDidMount: function() { this.draw(); },
+        componentDidUpdate: function() { this.draw(); },
+        render: function() {
+          return React.DOM.canvas({
+            className: 'detail-game',
+            width: 400,
+            height: 400
+          });
+        }
+      });
+      
+      var DetailView = React.createClass({
+        getInitialState: function() { return this.makeState(10000); },
+        updatePos: function(pos) { this.setState(this.makeState(pos)); },
+        makeState: function(pos) {
+          var game = new GameState(this.props.game.players[0].startPos, this.props.game.players[1].startPos);
+          var i;
+          for(i = 0; i < pos; ++i) {
+            game.executeMove(this.props.game.moves[i]);
+          }
+          return {pos: pos, snapshot: game.snapshot()};
+        },
+        gameInfo: function() {
+          var p = this.state.snapshot.players;
+          return 'Score: ' + p[0].score + ' - ' + p[1].score + ' = ' + (p[0].score - p[1].score) +
+            '\nMoves: ' + p[0].moves + ' - ' + p[1].moves + ' = ' + (p[0].moves - p[1].moves);
+        },
+        render: function() {
+          return React.DOM.div({children: [
+            DetailGraph({game: this.props.game, pos: this.state.pos, onUpdatePos: this.updatePos}),
+            DetailGame({game: this.state.snapshot}),
+            React.DOM.pre({children: this.gameInfo() })
+          ]});
+        }
+      });
+      
       var MatchView = React.createClass({
         getInitialState: function() {
           return {gameId: 0, score: [0, 0], games: []};
@@ -334,6 +499,15 @@
           var games = this.state.games;
           games[this.state.gameId % 20] = {id: this.state.gameId++, game: gameData};
           this.setState({score: score, games: games});
+        },
+        openDetail: function(state) {
+          this.setState({detailState: state});
+        },
+        closeDetail: function() {
+          this.setState({detailState: null});
+        },
+        gameView: function(g) {
+          return GameView({id: g.id, game: g.game, onSelect: this.openDetail});
         },
         render: function() {
           if(!this.props.file1 || !this.props.file2) {
@@ -355,7 +529,12 @@
               onClick: this.state.match ? this.stop : this.start,
               children: this.state.match ? 'Stop' : 'Start'
             }),
-            React.DOM.div({children: this.state.games.map(function(g) { return GameView(g); })})
+            this.state.detailState ?
+              React.DOM.div({children: [
+                React.DOM.a({href: '#', onClick: this.closeDetail, children: '< Back'}),
+                DetailView({game: this.state.detailState})
+              ]}) :
+              React.DOM.div({children: this.state.games.map(this.gameView)})
           ]});
         }
       });
