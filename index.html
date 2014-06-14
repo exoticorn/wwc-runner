@@ -62,6 +62,7 @@
       .move-count {
         color: #bbb;
         margin-left: 3px;
+        font-size: 80%;
       }
       
       .detail-graph {
@@ -160,12 +161,12 @@
         };
       }
       
-      function Game(file1, file2) {
+      function Game(file1, file2, positions, reverse) {
         var self = this;
-        var workers = [new GameWorker(0, file1), new GameWorker(1, file2)];
-        var state = new GameState(
-          {x: Math.floor(Math.random() * 100), y: Math.floor(Math.random() * 100)},
-          {x: Math.floor(Math.random() * 100), y: Math.floor(Math.random() * 100)});
+        var workers = !reverse ?
+          [new GameWorker(0, file1), new GameWorker(1, file2)] :
+          [new GameWorker(1, file2), new GameWorker(0, file1)];
+        var state = !reverse ? new GameState(positions[0], positions[1]) : new GameState(positions[1], positions[0]);
 
         function endGame() {
           if(self.onResult) {
@@ -216,6 +217,8 @@
         var self = this;
         var game = null;
         var score = [0, 0];
+        var reverse = false;
+        var positions;
         
         startNewGame();
         
@@ -223,7 +226,11 @@
           if(game) {
             game.terminate();
           }
-          game = new Game(file1, file2);
+          if(!reverse) {
+            positions = randomizePositions();
+          }
+          game = new Game(file1, file2, positions, reverse);
+          reverse = !reverse;
           game.onResult = function(snapshot) {
             if(snapshot.players[0].score > snapshot.players[1].score) {
               score[0]++;
@@ -235,6 +242,11 @@
             }
             startNewGame();
           }
+        }
+        
+        function randomizePositions() {
+          function one() { return {x: Math.floor(Math.random() * 100), y: Math.floor(Math.random() * 100)}; }
+          return [one(), one()];
         }
         
         self.stop = function() {
